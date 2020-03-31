@@ -5,8 +5,8 @@ close all
 %Definiciones Previas Obligatorias
 plotInitData = 'false';
 plotObservability = 'true';
-use_extended_system = true;
-params.cantRadares = 3;
+use_extended_system = false;
+params.cantRadares = 8;
 
 if params.cantRadares > 8
     Error: 'Cantidad Maxima de Radares'
