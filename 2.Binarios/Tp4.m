@@ -4,8 +4,9 @@ close all
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %Definiciones Previas Obligatorias
 plotInitData = 'false';
-plotObservability = 'false';
-params.cantRadares = 8;
+plotObservability = 'true';
+use_extended_system = true;
+params.cantRadares = 3;
 
 if params.cantRadares > 8
     Error: 'Cantidad Maxima de Radares'
@@ -25,29 +26,52 @@ params.VarMed= 3.6*10^-13;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %Parametros del modelo continuo
-syms px py pz vx vy vz ax ay az
+syms px py pz vx vy vz ax ay az tb
 q = data.q;
 %u  = 0;
-X_sym =[px;py;pz;vx;vy;vz;ax;ay;az];
-A =[O,I,O;O,O,I;O,O,O]; %Matriz de Estados
-Q =[O,O,O;O,O,O;O,O,q]; %Cov ruido de proces
+X_sym = [px;py;pz;vx;vy;vz;ax;ay;az];
+X_e_sym = [X_sym ; tb];
+A = [O,I,O;O,O,I;O,O,O]; %Matriz de Estados
+A_e = [A zeros(size(A, 1), 1) ; zeros(1, size(A, 2) + 1)];
+Q = [O,O,O;O,O,O;O,O,q]; %Cov ruido de proces
+Q_e = [Q zeros(size(Q, 1), 1) ; zeros(1, size(Q, 2) + 1)];
 R = eye(params.cantRadares)*params.VarMed; %Cov ruido de medicion
 
 %Linealizacion
-y_sym = alinealFunc(params); % Tiempo Medido por los radares
+y_sym = alinealFunc(params);
+y_e_sym = [y_sym(1) + tb; y_sym(2:end)];
 C_sym = jacobian(y_sym ,X_sym); 
+C_e_sym = jacobian(y_e_sym ,X_e_sym); 
 
 %Discretizacion
 h=1;
 Ad = expm(A*h);
+Ad_e = expm(A_e*h);
 Qd = [q*h^5/20,q*h^4/8,q*h^3/6;q*h^4/8,q*h^3/3,q*h^2/2;q*h^3/6,q*h^2/2,q*h];
+Qd_e = [Qd zeros(size(Qd, 1), 1) ; zeros(1, size(Qd, 2) + 1)];
 
 %Condiciones Iniciales
 x0_0 = zeros(size(X_sym));
 x0_0(1:3)=data.p(1,:)';
 x0_0(4:6)=data.v(1,:)';
 x0_0(7:9)=data.a(1,:)';
-P0_0 = diag([1 1 1 10^3 10^3 10^3 10 10 10 ]);
+x0_0_e = [x0_0 ; 0];
+
+P0_0 = diag([1 1 1 10^3 10^3 10^3 10 10 10]);
+P0_0_e = diag([1 1 1 10^3 10^3 10^3 10 10 10 1e-3]);
+
+%System selection
+if use_extended_system == true
+    A = A_e;
+    X_sym = X_e_sym;
+    y_sym = y_e_sym;
+    C_sym = C_e_sym;
+    Q = Q_e;
+    P0_0 = P0_0_e;
+    x0_0 = x0_0_e;
+    Qd = Qd_e;
+    Ad = Ad_e;
+end
 
 % Genero todas las muestras con ruido
 Ym = getMeasurement(params);
@@ -216,7 +240,7 @@ newfig
     set(gcf, 'Position', get(0, 'Screensize'));
 saveas(gcf, 'trayectoria.png')
 %------------------------------------%\
-% Posicion real
+% Trayectoria en tres dimensiones
 newfig
     hold on
     grid on
@@ -225,7 +249,8 @@ newfig
     plot3(X(1,:),X(2,:),X(3,:),'x','Color','k','MarkerSize',5)
     plot3(data.p(end,1),data.p(end,2),data.p(end,3),'-o','Color','b','MarkerSize',7)
     plot3(0,0,0,'ko','MarkerSize',10);
-    plot3(data.RP(:,1),data.RP(:,2),zeros(size(data.RP(:,2))),'rx','MarkerSize',10); 
+    plot3(params.posicionesRadares(:,1),params.posicionesRadares(:,2),...
+        params.posicionesRadares(:,3),'rx','MarkerSize',10); 
     xlabel('x(t)')
     ylabel('y(t)')
     zlabel('z(t)')
@@ -233,21 +258,39 @@ newfig
     view(-115,42)
     set(gcf, 'Position', get(0, 'Screensize'));
 saveas(gcf, 'trayectoriaRealCompleta.png')
- %------------------------------------% 
-%Autocorrelacion de la innovacion
-% newfig
-%     for i=1:size(E,1)
-%         title('Autocorrelacion de la innovacion')
-%         subplot(size(E,1),1,i)
-%         [c,lags] = xcov(E(i,:));
-%         stem(lags,c)
-%     end
-%     set(gcf, 'Position', get(0, 'Screensize'));
-% saveas(gcf, 'innovacion.png')
+
 %------------------------------------%
+% Trayectoria en tres dimensiones ECM
+delta_posicion_k = (((sum(data.p.^2, 2)).^(1/2)) - ((sum(X(1:3, :)'.^2, 2)).^(1/2)))';
+ecm = sqrt(delta_posicion_k*delta_posicion_k');
+fprintf('Error cuadratico medio de la trayectoria %.2f', ecm)
+%------------------------------------%
+% Trayectoria sobre el mapa
+%newfig
+%    plotloc3(params.posicionesRadares,X(1:3,:),data.p(:,1:3)',data.map)
+%    set(gcf, 'Position', get(0, 'Screensize'));
+    
+%Autocorrelacion de la innovacion
 newfig
-    plotloc3(params.posicionesRadares,X(1:3,:),data.p(:,1:3)',data.map)
+    if rem(size(E,1), 2) == 0
+        for i=1:size(E,1)
+            subplot(size(E,1) / 2, 2 ,i)
+            [c,lags] = xcov(E(i,:));
+            stem(lags,c)
+            title_str = sprintf('Autocorrelacion de la innovacion del radar %d', i);
+            title(title_str);
+        end
+    else
+        for i=1:size(E,1)
+            subplot(size(E,1),1,i)
+            [c,lags] = xcov(E(i,:));
+            stem(lags,c)
+            title_str = sprintf('Autocorrelacion de la innovacion del radar %d', i);
+            title(title_str);
+        end
+    end
     set(gcf, 'Position', get(0, 'Screensize'));
+saveas(gcf, 'innovacion.png')
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Funciones Invocadas en el programa
@@ -263,27 +306,27 @@ end
 %------------------------------------% 
 function L = isObsv(Ad,C)
     L = rank(obsv(Ad,C));
-    if (L == length(Ad))
-        disp('El sistema es completamente observable')
-    else
+    if (L ~= length(Ad))
         disp('El sistema NO es completamente observable')
         disp(['La cantidad de estados observables es: ',num2str(L)])
+    %disp('El sistema es completamente observable')
+    %else
     end 
 end
 %------------------------------------% 
 function y = alinealFunc(params)
-cantRadares = params.cantRadares;
-posicionesRadares = params.posicionesRadares;
-global px py pz
-syms px py pz
-    c = 3*10^8;
-    for i=1:cantRadares
-        px_r = posicionesRadares(i,1);
-        py_r = posicionesRadares(i,2);
-        pz_r = posicionesRadares(i,3);
-        %Y siempre es positiva no hace falta modulo
-        y(i,:) = (2/c)*sqrt((px-px_r)^2 + (py-py_r)^2 +(pz-pz_r)^2);
-    end
+    cantRadares = params.cantRadares;
+    posicionesRadares = params.posicionesRadares;
+    global px py pz
+    syms px py pz
+        c = 3*10^8;
+        for i=1:cantRadares
+            px_r = posicionesRadares(i,1);
+            py_r = posicionesRadares(i,2);
+            pz_r = posicionesRadares(i,3);
+            %Y siempre es positiva no hace falta modulo
+            y(i,:) = (2/c)*sqrt((px-px_r)^2 + (py-py_r)^2 +(pz-pz_r)^2);
+        end
 end 
 %------------------------------------% 
 function Ym = getMeasurement(params)
