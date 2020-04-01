@@ -4,8 +4,8 @@ close all
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %Definiciones Previas Obligatorias
 plotInitData = 'false';
-plotObservability = 'true';
-use_extended_system = false;
+plotObservability = 'false';
+use_extended_system = true;
 params.cantRadares = 8;
 
 if params.cantRadares > 8
@@ -39,7 +39,7 @@ R = eye(params.cantRadares)*params.VarMed; %Cov ruido de medicion
 
 %Linealizacion
 y_sym = alinealFunc(params);
-y_e_sym = [y_sym(1) + tb; y_sym(2:end)];
+y_e_sym = [y_sym(1) + tb; y_sym(2:end)];  %si tb suma el modelo te queda t-tb ojo
 C_sym = jacobian(y_sym ,X_sym); 
 C_e_sym = jacobian(y_e_sym ,X_e_sym); 
 
@@ -58,7 +58,7 @@ x0_0(7:9)=data.a(1,:)';
 x0_0_e = [x0_0 ; 0];
 
 P0_0 = diag([1 1 1 10^3 10^3 10^3 10 10 10]);
-P0_0_e = diag([1 1 1 10^3 10^3 10^3 10 10 10 1e-3]);
+P0_0_e = diag([1 1 1 10^3 10^3 10^3 10 10 10 10^-3]);
 
 %System selection
 if use_extended_system == true
@@ -95,11 +95,13 @@ for k = 1:params.tiempoFinal
     X_k_kminus = Ad * X_kminus_kminus ;
     P_k_kminus = Ad * P_kminus_kminus * Ad' + Qd;
     
-    
     %Obtengo C
     values.px = X_k_kminus(1);
     values.py = X_k_kminus(2);
     values.pz = X_k_kminus(3);
+    if use_extended_system == true
+        values.tb = X_k_kminus(4);
+    end
     C = double(subs(C_sym,values));
     
     %Test de Observabilidad
@@ -109,8 +111,8 @@ for k = 1:params.tiempoFinal
 
     %Actualizacion
     K_k =  P_k_kminus * C' * inv( C * P_k_kminus * C' + R);
-    X_k_k =  X_k_kminus + K_k * (Yk - double(subs(y_sym,values)) );
-    X_real=[ data.p(k,:)';data.v(k,:)';data.a(k,:)'];
+    X_k_k =  X_k_kminus + K_k * (Yk - double(subs(y_sym,values)) )
+    X_real=[ data.p(k,:)';data.v(k,:)';data.a(k,:)']
     
     P_k_k = (eye(size(K_k*C)) - K_k*C) * P_k_kminus ;
     %P_k_k = (eye(size(K_k*C)) - K_k * C)* P_k_kminus * (eye(size(K_k*C)) - K_k*C)' +  K_k * R * K_k';
