@@ -5,8 +5,9 @@ close all
 %Definiciones Previas Obligatorias
 plotInitData = 'false';
 plotObservability = 'false';
-use_extended_system = true;
-params.cantRadares = 8;
+use_extended_system = false;
+use_square_root_algorithm = true;
+params.cantRadares = 4;
 
 if params.cantRadares > 8
     Error: 'Cantidad Maxima de Radares'
@@ -100,7 +101,7 @@ for k = 1:params.tiempoFinal
     values.py = X_k_kminus(2);
     values.pz = X_k_kminus(3);
     if use_extended_system == true
-        values.tb = X_k_kminus(4);
+        values.tb = X_k_kminus(10);
     end
     C = double(subs(C_sym,values));
     
@@ -110,15 +111,30 @@ for k = 1:params.tiempoFinal
     end
 
     %Actualizacion
-    K_k =  P_k_kminus * C' * inv( C * P_k_kminus * C' + R);
-    X_k_k =  X_k_kminus + K_k * (Yk - double(subs(y_sym,values)) )
-    X_real=[ data.p(k,:)';data.v(k,:)';data.a(k,:)']
+    if use_square_root_algorithm == true
+        R_chol = chol(R);
+        P_k_kminus_chol = chol(P_k_kminus);
+        Qd_chol = chol(Qd);
+        n = length(X_k_kminus);
+        p = length(Yk);
+        q = size(Qd, 1);
+        M = [R_chol' C*P_k_kminus_chol' zeros(p, q) ; ...
+            zeros(n, p) Ad*P_k_kminus_chol' Qd_chol' ; ...
+            -Yk'*inv(R_chol) X_k_kminus'*inv(P_k_kminus_chol) zeros(1, q)];
+        [Q_QRM, R_QRM] = qr(M');
+        R_QRM_tranposed = R_QRM';
+        Z = R_QRM_tranposed(p + 1 : p + n, p + 1 : p + n);
+        W2 = R_QRM_tranposed(end, p + 1 : p + n);
+        X_k_k = Z*W2';
+        P_k_k = Z*Z';
+    else
+        K_k =  P_k_kminus * C' * inv( C * P_k_kminus * C' + R);
+        X_k_k =  X_k_kminus + K_k * (Yk - double(subs(y_sym,values)) );
+        P_k_k = (eye(size(K_k*C)) - K_k*C) * P_k_kminus ;
+    end
     
-    P_k_k = (eye(size(K_k*C)) - K_k*C) * P_k_kminus ;
-    %P_k_k = (eye(size(K_k*C)) - K_k * C)* P_k_kminus * (eye(size(K_k*C)) - K_k*C)' +  K_k * R * K_k';
-
     X = [X (X_kminus_kminus) ];
-    E =[E (Yk - double(subs(y_sym,values)) )];
+    E = [E (Yk - double(subs(y_sym,values)) )];
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -263,9 +279,9 @@ saveas(gcf, 'trayectoriaRealCompleta.png')
 
 %------------------------------------%
 % Trayectoria en tres dimensiones ECM
-delta_posicion_k = (((sum(data.p.^2, 2)).^(1/2)) - ((sum(X(1:3, :)'.^2, 2)).^(1/2)))';
-ecm = sqrt(delta_posicion_k*delta_posicion_k');
-fprintf('Error cuadratico medio de la trayectoria %.2f', ecm)
+delta = (data.p - X(1:3, :)').^2;
+ecm = mean(sqrt(sum(delta, 2)));
+fprintf('Error cuadratico medio de la trayectoria %.2f\n', ecm)
 %------------------------------------%
 % Trayectoria sobre el mapa
 %newfig
@@ -293,7 +309,37 @@ newfig
     end
     set(gcf, 'Position', get(0, 'Screensize'));
 saveas(gcf, 'innovacion.png')
-
+%------------------------------------%
+% Bias in radar one measurements
+if use_extended_system == true
+    newfig
+    
+    yyaxis left
+    y_axis = X(10,:)*1e9;
+    x_axis = 1:params.tiempoFinal;
+    hPlot = plot(x_axis,y_axis,'-x','Color','k');
+    title('Bias en la medición de tiempos del radar 1')
+    xlabel('k')
+    ylabel('tiempo [ns]')
+    
+    [max_val,index] = max(x_axis);
+    h = gcf;
+    cursorMode = datacursormode(h);
+    hDatatip = cursorMode.createDatatip(hPlot);
+    pos = [x_axis(index) y_axis(index) 0];
+    set(hDatatip, 'Position', pos)         
+    updateDataCursors(cursorMode)
+    
+    yyaxis right
+    plot(1:params.tiempoFinal,data.T(:,1)*1e6','-o','Color','r')
+    xlabel('k')
+    ylabel('tiempo [us]')
+    
+    legend('Bias', 'Mediciones del radar 1')
+    
+    set(gcf, 'Position', get(0, 'Screensize'));
+    saveas(gcf, 'bias.png')
+end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Funciones Invocadas en el programa
 %------------------------------------% 
@@ -338,4 +384,5 @@ function Ym = getMeasurement(params)
     sigma=sqrt(params.VarMed);
     etha=normrnd(mu,sigma,cantRadares,tiempoFinal);
     Ym = params.T + etha;
+    %Ym(1,:) = Ym(1,:) + 1e-6; %Manual bias for testing purpose
 end
