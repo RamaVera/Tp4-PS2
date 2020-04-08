@@ -6,8 +6,10 @@ close all
 plotInitData = 'false';
 plotObservability = 'false';
 use_extended_system = false;
-use_square_root_algorithm = true;
-params.cantRadares = 4;
+use_square_root_algorithm = false;
+params.generate_measurements_errors = false;
+params.measurements_error_prob = 0.9;
+params.cantRadares = 8;
 
 if params.cantRadares > 8
     Error: 'Cantidad Maxima de Radares'
@@ -109,28 +111,33 @@ for k = 1:params.tiempoFinal
     if strcmp(plotObservability,'true')
         L = isObsv(Ad,C);
     end
-
-    %Actualizacion
-    if use_square_root_algorithm == true
-        R_chol = chol(R);
-        P_k_kminus_chol = chol(P_k_kminus);
-        Qd_chol = chol(Qd);
-        n = length(X_k_kminus);
-        p = length(Yk);
-        q = size(Qd, 1);
-        M = [R_chol' C*P_k_kminus_chol' zeros(p, q) ; ...
-            zeros(n, p) Ad*P_k_kminus_chol' Qd_chol' ; ...
-            -Yk'*inv(R_chol) X_k_kminus'*inv(P_k_kminus_chol) zeros(1, q)];
-        [Q_QRM, R_QRM] = qr(M');
-        R_QRM_tranposed = R_QRM';
-        Z = R_QRM_tranposed(p + 1 : p + n, p + 1 : p + n);
-        W2 = R_QRM_tranposed(end, p + 1 : p + n);
-        X_k_k = Z*W2';
-        P_k_k = Z*Z';
+    
+    if Yk ~=0
+        %Actualizacion
+        if use_square_root_algorithm == true
+            R_chol = chol(R);
+            P_k_kminus_chol = chol(P_k_kminus);
+            Qd_chol = chol(Qd);
+            n = length(X_k_kminus);
+            p = length(Yk);
+            q = size(Qd, 1);
+            M = [R_chol' C*P_k_kminus_chol' zeros(p, q) ; ...
+                zeros(n, p) Ad*P_k_kminus_chol' Qd_chol' ; ...
+                -Yk'*inv(R_chol) X_k_kminus'*inv(P_k_kminus_chol) zeros(1, q)];
+            [Q_QRM, R_QRM] = qr(M');
+            R_QRM_tranposed = R_QRM';
+            Z = R_QRM_tranposed(p + 1 : p + n, p + 1 : p + n);
+            W2 = R_QRM_tranposed(end, p + 1 : p + n);
+            X_k_k = Z*W2';
+            P_k_k = Z*Z';
+        else
+            K_k =  P_k_kminus * C' * inv( C * P_k_kminus * C' + R);
+            X_k_k =  X_k_kminus + K_k * (Yk - double(subs(y_sym,values)) );
+            P_k_k = (eye(size(K_k*C)) - K_k*C) * P_k_kminus ;
+        end
     else
-        K_k =  P_k_kminus * C' * inv( C * P_k_kminus * C' + R);
-        X_k_k =  X_k_kminus + K_k * (Yk - double(subs(y_sym,values)) );
-        P_k_k = (eye(size(K_k*C)) - K_k*C) * P_k_kminus ;
+        X_k_k = X_k_kminus;
+		P_k_k = P_k_kminus;
     end
     
     X = [X (X_kminus_kminus) ];
@@ -385,4 +392,9 @@ function Ym = getMeasurement(params)
     etha=normrnd(mu,sigma,cantRadares,tiempoFinal);
     Ym = params.T + etha;
     %Ym(1,:) = Ym(1,:) + 1e-6; %Manual bias for testing purpose
+    if params.generate_measurements_errors == true
+        prob = params.measurements_error_prob;
+        missing_indexes = (rand(1, length(Ym)) < prob);
+        Ym(:, missing_indexes) = 0;
+    end
 end
