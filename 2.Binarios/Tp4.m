@@ -5,8 +5,8 @@ close all
 %Definiciones Previas Obligatorias
 plotInitData = 'false';
 plotObservability = 'false';
-use_extended_system = false;
-use_square_root_algorithm = false;
+use_extended_system = false; %True para ejercicio 5 
+use_square_root_algorithm = false; %True para ejercicio 6
 params.generate_measurements_errors = false;
 params.measurements_error_prob = 0.9;
 params.cantRadares = 8;
@@ -47,11 +47,16 @@ C_sym = jacobian(y_sym ,X_sym);
 C_e_sym = jacobian(y_e_sym ,X_e_sym); 
 
 %Discretizacion
+%
+syms h
+Qd = double(int(expm(A*h)*Q*expm(A'*h),h,0,1));
+Qd_e= double(int(expm(A_e*h)*Q_e*expm(A_e'*h),h,0,1));
 h=1;
 Ad = expm(A*h);
 Ad_e = expm(A_e*h);
-Qd = [q*h^5/20,q*h^4/8,q*h^3/6;q*h^4/8,q*h^3/3,q*h^2/2;q*h^3/6,q*h^2/2,q*h];
-Qd_e = [Qd zeros(size(Qd, 1), 1) ; zeros(1, size(Qd, 2) + 1)];
+%Qd = [q*h^5/20,q*h^4/8,q*h^3/6;q*h^4/8,q*h^3/3,q*h^2/2;q*h^3/6,q*h^2/2,q*h];
+%Qd_e = [Qd zeros(size(Qd, 1), 1) ; zeros(1, size(Qd, 2) + 1)];
+
 
 %Condiciones Iniciales
 x0_0 = zeros(size(X_sym));
@@ -115,9 +120,9 @@ for k = 1:params.tiempoFinal
     if Yk ~=0
         %Actualizacion
         if use_square_root_algorithm == true
-            R_chol = chol(R);
-            P_k_kminus_chol = chol(P_k_kminus);
-            Qd_chol = chol(Qd);
+            R_chol = chol(R,'lower');
+            P_k_kminus_chol = chol(P_k_kminus,'lower');
+            Qd_chol = chol(Qd,'lower');
             n = length(X_k_kminus);
             p = length(Yk);
             q = size(Qd, 1);
