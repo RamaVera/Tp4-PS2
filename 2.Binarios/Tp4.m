@@ -5,11 +5,12 @@ close all
 %Definiciones Previas Obligatorias
 plotInitData = 'false';
 plotObservability = 'false';
+showEvolutionOfP = 'true';
 use_extended_system = false; %True para ejercicio 5 
 use_square_root_algorithm = false; %True para ejercicio 6
 params.generate_measurements_errors = false;
-params.measurements_error_prob = 0.9;
-params.cantRadares = 8;
+params.measurements_error_prob = 0.5;
+params.cantRadares = 4;
 
 if params.cantRadares > 8
     Error: 'Cantidad Maxima de Radares'
@@ -18,9 +19,11 @@ end
 %Auxiliares
 data = load("tp4_fke");
 X = [];
+P = [];
 E = [];
 I = eye(3);
 O = zeros(3);
+c = 1;
 params.posicionesRadares = data.RP(1:params.cantRadares,:);
 params.tiempoFinal = length(data.T);
 params.T = data.T(:,1:params.cantRadares)' ;
@@ -65,8 +68,9 @@ x0_0(4:6)=data.v(1,:)';
 x0_0(7:9)=data.a(1,:)';
 x0_0_e = [x0_0 ; 0];
 
-P0_0 = diag([1 1 1 10^3 10^3 10^3 10 10 10]);
-P0_0_e = diag([1 1 1 10^3 10^3 10^3 10 10 10 10^-3]);
+P0_0 = diag([10^4 10^4 10^4 10^3 10^3 10^3 10^2 10^2 10^2]);
+%%P0_0 = diag([10^4 10^4 10^4 10^2 10^2 10^2 10 10 10]);
+P0_0_e = diag([0^4 10^4 10^4 10^3 10^3 10^3 10^2 10^2 10^2 10^-3]);
 
 %System selection
 if use_extended_system == true
@@ -146,6 +150,7 @@ for k = 1:params.tiempoFinal
     end
     
     X = [X (X_kminus_kminus) ];
+    P{c} = P_kminus_kminus ; c = c+1;
     E = [E (Yk - double(subs(y_sym,values)) )];
 end
 
@@ -158,11 +163,11 @@ if strcmp(plotInitData,'true')
         subplot(1,2,1)
             hold on
             grid on
-            plot(p(1,1),p(1,2),'-o','Color','g','MarkerSize',7)
-            plot(p(:,1),p(:,2),'-o','Color','r','MarkerSize',5)
-            plot(p(end,1),p(end,2),'-o','Color','b','MarkerSize',7)
+            plot(data.p(1,1),data.p(1,2),'-o','Color','g','MarkerSize',7)
+            plot(data.p(:,1),data.p(:,2),'-o','Color','r','MarkerSize',5)
+            plot(data.p(end,1),data.p(end,2),'-o','Color','b','MarkerSize',7)
             plot(0,0,'o','MarkerSize',10);
-            plot(RP(:,1),RP(:,2),'rx','MarkerSize',10); 
+            plot(data.RP(:,1),data.RP(:,2),'rx','MarkerSize',10); 
             legend({'Inicio','Trayectoria Real','Final','Origen','Radares'})
             title('Posiciones de los Radares en Z= 0')
             xlabel('x(t)')
@@ -172,11 +177,12 @@ if strcmp(plotInitData,'true')
         subplot(1,2,2)
             hold on
             grid on
-            plot(0,p(1,3),'-o','Color','g','MarkerSize',7)
-            plot(p(:,3),'-o','Color','r','MarkerSize',5)
-            plot(length(p(:,1)),p(end,3),'-o','Color','b','MarkerSize',7)
+            plot(0,data.p(1,3),'-o','Color','g','MarkerSize',7)
+            plot(data.p(:,3),'-o','Color','r','MarkerSize',5)
+            plot(length(data.p(:,1)),data.p(end,3),'-o','Color','b','MarkerSize',7)
             plot(0,0,'o','MarkerSize',10);
             legend({'Inicio','Trayectoria Real','Final','Origen'})
+            title('Evolucion sobre el eje Z a lo largo del tiempo')
             xlabel('t')
             ylabel('z(t)')
     set(gcf, 'Position', get(0, 'Screensize'));
@@ -292,8 +298,16 @@ saveas(gcf, 'trayectoriaRealCompleta.png')
 %------------------------------------%
 % Trayectoria en tres dimensiones ECM
 delta = (data.p - X(1:3, :)').^2;
-ecm = mean(sqrt(sum(delta, 2)));
-fprintf('Error cuadratico medio de la trayectoria %.2f\n', ecm)
+ecm = mean(delta); 
+rmsd = sqrt(ecm);  % como un promedio de desv standard
+nrmsd_x = rmsd(1)/(max(data.p(1,:))-min(data.p(1,:)));
+nrmsd_y = rmsd(2)/(max(data.p(2,:))-min(data.p(2,:)));
+nrmsd_z = rmsd(3)/(max(data.p(3,:))-min(data.p(3,:)));
+
+fprintf('Porcentaje de error respecto a la trayectoria real en el eje x: %% %.2f \n', nrmsd_x*100)
+fprintf('Porcentaje de error respecto a la trayectoria real en el eje y: %% %.2f \n', nrmsd_y*100)
+fprintf('Porcentaje de error respecto a la trayectoria real en el eje z: %% %.2f \n', nrmsd_z*100)
+%%ecm = mean(sqrt(sum(delta, 2)));
 %------------------------------------%
 % Trayectoria sobre el mapa
 %newfig
@@ -352,6 +366,20 @@ if use_extended_system == true
     set(gcf, 'Position', get(0, 'Screensize'));
     saveas(gcf, 'bias.png')
 end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Evolucion de Matriz P a lo largo del programa
+if(strcmp(showEvolutionOfP,'true'))
+    newfig
+    hold on
+    set(gcf, 'Position', get(0, 'Screensize'));
+    set(gca,'YDir','reverse')
+    for i=1:10:length(P)
+        plotMatrix(P{i})
+        title(['Evolucion de matriz P - ', 'Paso:',num2str(i),' de ',num2str(length(P))])
+        pause(1)
+    end
+end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Funciones Invocadas en el programa
 %------------------------------------% 
@@ -369,8 +397,8 @@ function L = isObsv(Ad,C)
     if (L ~= length(Ad))
         disp('El sistema NO es completamente observable')
         disp(['La cantidad de estados observables es: ',num2str(L)])
-    %disp('El sistema es completamente observable')
-    %else
+    else
+        disp('El sistema es completamente observable')
     end 
 end
 %------------------------------------% 
@@ -402,4 +430,65 @@ function Ym = getMeasurement(params)
         missing_indexes = (rand(1, length(Ym)) < prob);
         Ym(:, missing_indexes) = 0;
     end
+end
+%------------------------------------%
+
+function plotMatrix(varargin)
+%PLOTCONFMAT plots the confusion matrix with colorscale, absolute numbers
+%   and precision normalized percentages
+%
+%   usage: 
+%   PLOTCONFMAT(confmat) plots the confmat with integers 1 to n as class labels
+%   PLOTCONFMAT(confmat, labels) plots the confmat with the specified labels
+%
+%   Vahe Tshitoyan
+%   20/08/2017
+%
+%   Arguments
+%   confmat:            a square confusion matrix
+%   labels (optional):  vector of class labels
+% number of arguments
+switch (nargin)
+    case 0
+       confmat = 1;
+       labels = {'1'};
+    case 1
+       confmat = varargin{1};
+       labels = 1:size(confmat, 1);
+    otherwise
+       confmat = varargin{1};
+       labels = varargin{2};
+end
+format long
+confmat(isnan(confmat))= 0; % in case there are NaN elements
+numlabels = size(confmat, 1); % number of labels
+% calculate the percentage accuracies
+% plotting the colors
+%confpercent=100*confmat./sum(sum(confmat));
+confpercent=confmat;
+imagesc(confpercent,[-200 1000]);
+%%title(sprintf('Accuracy: %.2f%%', 100*trace(confmat)/sum(confmat(:))));
+% ylabel('Output Class'); xlabel('Target Class');
+% set the colormap
+colormap(flipud(gray(10000000)));
+% Create strings from the matrix values and remove spaces
+%textStrings = num2str([confpercent(:), confmat(:)], '%.1f%%\n%d\n');
+textStrings = num2str([confmat(:)], '%.3f\n');
+textStrings = strtrim(cellstr(textStrings));
+% Create x and y coordinates for the strings and plot them
+[x,y] = meshgrid(1:numlabels);
+hStrings = text(x(:),y(:),textStrings(:), ...
+    'HorizontalAlignment','center');
+% Get the middle value of the color range
+midValue = mean(get(gca,'CLim'));
+% Choose white or black for the text color of the strings so
+% they can be easily seen over the background color
+textColors = repmat(confpercent(:) > midValue,1,3);
+set(hStrings,{'Color'},num2cell(textColors,2));
+% Setting the axis labels
+set(gca,'XTick',1:numlabels,...
+    'XTickLabel',labels,...
+    'YTick',1:numlabels,...
+    'YTickLabel',labels,...
+    'TickLength',[0 0]);
 end
